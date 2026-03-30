@@ -2,6 +2,7 @@ use std::fmt::Write;
 
 use but_core::sync::LockScope;
 use but_ctx::Context;
+use but_settings::{AppSettings, app_settings::FeatureFlags};
 use colored::Colorize;
 use command_group::AsyncCommandGroup;
 
@@ -119,7 +120,7 @@ pub fn init_ctx(
                 Ok(project) => project,
                 Err(_) => {
                     let message = format!("No GitButler project found at {}", workdir.display());
-                    match prompt_for_setup(out, &message) {
+                    match prompt_for_setup(&AppSettings::default().feature_flags, out, &message) {
                         SetupPromptResult::RunSetup => {
                             // Run setup
                             let mut ctx = Context::from_repo(repo.clone())?;
@@ -151,7 +152,7 @@ pub fn init_ctx(
                 let mut guard = ctx.exclusive_worktree_access();
                 if let Err(e) = check_project_setup(&ctx, guard.read_permission()) {
                     let message = e.to_string();
-                    match prompt_for_setup(out, &message) {
+                    match prompt_for_setup(&ctx.settings.feature_flags, out, &message) {
                         SetupPromptResult::RunSetup => {
                             // Run setup to fix the project configuration
                             crate::command::legacy::setup::repo(
@@ -391,7 +392,11 @@ enum SetupPromptResult {
     Declined,
 }
 
-fn prompt_for_setup(out: &mut OutputChannel, message: &str) -> SetupPromptResult {
+fn prompt_for_setup(
+    feature_flags: &FeatureFlags,
+    out: &mut OutputChannel,
+    message: &str,
+) -> SetupPromptResult {
     use std::fmt::Write;
     let mut progress = out.progress_channel();
 
@@ -406,9 +411,15 @@ fn prompt_for_setup(out: &mut OutputChannel, message: &str) -> SetupPromptResult
     let user_declined_in_interactive_mode = if let Some(mut inout) =
         out.prepare_for_terminal_input()
     {
+        let setup_changes = if feature_flags.single_branch {
+            " - Keep you on your normal branch (e.g. main) instead of switching to `gitbutler/workspace`\n - Install Git hooks to help manage the tooling"
+        } else {
+            " - Switch you to a special `gitbutler/workspace` branch to enable parallel branches\n - Install Git hooks to help manage the tooling"
+        };
         _ = writeln!(
             progress,
-            "In order to manage projects with GitButler, we need to do some changes:\n\n - Switch you to a special `gitbutler/workspace` branch to enable parallel branches\n - Install Git hooks to help manage the tooling\n\nYou can go back to normal git workflows at any time by either:\n\n - Running `but teardown`\n - Manually checking out a normal branch with `git checkout <branch>`\n",
+            "In order to manage projects with GitButler, we need to do some changes:\n\n{setup_changes}\n\nYou can go back to normal git workflows at any time by either:\n\n - Running `but teardown`\n - Manually checking out a normal branch with `git checkout <branch>`\n",
+            setup_changes = setup_changes,
         );
 
         if let Ok(Confirm::Yes) =

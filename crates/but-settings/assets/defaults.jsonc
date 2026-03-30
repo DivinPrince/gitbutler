@@ -31,8 +31,8 @@
 		"undo": false,
 		/// Enable processing of workspace rules.
 		"rules": false,
-		/// Enable single branch mode.
-		"singleBranch": false,
+		/// Enable single branch mode (stay on normal branches like main instead of gitbutler/workspace).
+		"singleBranch": true,
 		/// Enable IRC integration.
 		"irc": false,
 		/// Control how the filesystem watch should be established.

@@ -5,6 +5,7 @@ use bstr::BString;
 use but_core::{ref_metadata::StackId, sync::RepoShared};
 use but_ctx::Context;
 use but_serde::BStringForFrontend;
+use gitbutler_stack::VirtualBranchesHandle;
 use serde::{Deserialize, Serialize};
 
 /// The reference the app will checkout when the workspace is open
@@ -96,7 +97,7 @@ but_schemars::register_sdk_type!(OutsideWorkspaceMetadata);
 #[cfg_attr(feature = "export-schema", derive(schemars::JsonSchema))]
 #[serde(tag = "type", content = "subject")]
 pub enum OperatingMode {
-    /// The typical app state when it's on the gitbutler/workspace branch
+    /// The typical app state when it's on the gitbutler/workspace branch, or with single-branch mode on the default target branch (e.g. main).
     OpenWorkspace,
     /// When the user has chosen to leave the gitbutler/workspace branch
     OutsideWorkspace(OutsideWorkspaceMetadata),
@@ -121,6 +122,8 @@ pub fn operating_mode(ctx: &Context, perm: &RepoShared) -> Result<OperatingMode>
     };
     if is_well_known_workspace_ref(head_ref_name) {
         Ok(OperatingMode::OpenWorkspace)
+    } else if head_on_default_target_branch(ctx, &repo, head_ref_name)? {
+        Ok(OperatingMode::OpenWorkspace)
     } else if head_ref_name.as_bstr() == EDIT_BRANCH_REF {
         let edit_mode_metadata = read_edit_mode_metadata(ctx);
 
@@ -141,6 +144,33 @@ pub fn operating_mode(ctx: &Context, perm: &RepoShared) -> Result<OperatingMode>
             outside_workspace_metadata(ctx, perm).unwrap_or_default(),
         ))
     }
+}
+
+/// When [single branch mode](but_settings::app_settings::FeatureFlags::single_branch) is on, treat
+/// being checked out on the local branch that tracks the default target (e.g. `main` tracking
+/// `origin/main`) as open workspace mode, so the app does not require `gitbutler/workspace`.
+fn head_on_default_target_branch(
+    ctx: &Context,
+    repo: &gix::Repository,
+    head_ref_name: &gix::refs::FullNameRef,
+) -> Result<bool> {
+    if !ctx.settings.feature_flags.single_branch {
+        return Ok(false);
+    }
+    let Some(default_target) = VirtualBranchesHandle::new(ctx.project_data_dir())
+        .maybe_get_default_target()?
+    else {
+        return Ok(false);
+    };
+    let Some(maybe_tracking) =
+        repo.branch_remote_tracking_ref_name(head_ref_name, gix::remote::Direction::Fetch)
+    else {
+        return Ok(false);
+    };
+    let Ok(tracking) = maybe_tracking else {
+        return Ok(false);
+    };
+    Ok(tracking.as_ref().to_string() == default_target.branch.to_string())
 }
 
 fn outside_workspace_metadata(

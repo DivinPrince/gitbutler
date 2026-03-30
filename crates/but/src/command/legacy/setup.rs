@@ -380,8 +380,8 @@ pub(crate) fn repo(
             .unwrap_or_default()
     };
 
-    // switch to gitbutler/workspace if not already there
-    if !head_name.starts_with(b"gitbutler/") {
+    // Switch to gitbutler/workspace unless single-branch mode is enabled (stay on e.g. main).
+    if !ctx.settings.feature_flags.single_branch && !head_name.starts_with(b"gitbutler/") {
         but_api::legacy::virtual_branches::switch_back_to_workspace_with_perm(ctx, perm)?;
     }
 
@@ -397,8 +397,9 @@ pub(crate) fn repo(
         )?;
     }
 
-    // if we switched - tell the user what this is all about
-    if pre_head_name != "gitbutler/workspace"
+    // If we switched to gitbutler/workspace, explain why.
+    if !ctx.settings.feature_flags.single_branch
+        && pre_head_name != "gitbutler/workspace"
         && let Some(out) = out.for_human()
     {
         writeln!(
@@ -415,6 +416,20 @@ To undo these changes and return to normal Git mode, either:
 
     - Directly checkout a branch (`git checkout {pre_head_name}`)
     - Run `but teardown`
+
+More info: https://docs.gitbutler.com/workspace-branch
+"#
+            )
+            .yellow()
+        )?;
+    } else if ctx.settings.feature_flags.single_branch && let Some(out) = out.for_human() {
+        writeln!(
+            out,
+            "{}",
+            format!(
+                r#"
+Single-branch mode is enabled: you stay on your normal branch (e.g. main).
+Git hooks are still installed to help GitButler manage commits.
 
 More info: https://docs.gitbutler.com/workspace-branch
 "#
@@ -449,7 +464,7 @@ More info: https://docs.gitbutler.com/workspace-branch
 /// - if the project is registered in GitButler
 /// - if there is a remote
 /// - if there is a default target branch set
-/// - if we're on a gitbutler/* branch
+/// - if we're on a gitbutler/* branch (skipped in single-branch mode)
 pub fn check_project_setup(ctx: &Context, perm: &RepoShared) -> anyhow::Result<bool> {
     let (repo, ws, _) = ctx.workspace_and_db_with_perm(perm)?;
 
@@ -459,7 +474,7 @@ pub fn check_project_setup(ctx: &Context, perm: &RepoShared) -> anyhow::Result<b
         .referent_name()
         .map(|n| n.shorten().to_owned())
         .unwrap_or_default();
-    if !head_name.starts_with(b"gitbutler/") {
+    if !ctx.settings.feature_flags.single_branch && !head_name.starts_with(b"gitbutler/") {
         anyhow::bail!("Not currently on a gitbutler/* branch.");
     }
 

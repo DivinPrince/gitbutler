@@ -106,6 +106,36 @@ mod operating_modes {
         }
 
         #[test]
+        fn in_open_workspace_mode_true_on_default_target_branch_with_single_branch_flag() {
+            use but_testsupport::legacy::virtual_branches::set_test_target;
+            use gitbutler_reference::RemoteRefname;
+
+            let suite = Suite::default();
+            let mut case = suite.new_case();
+
+            set_test_target(&case.ctx).unwrap();
+            case.ctx.settings.feature_flags.single_branch = true;
+
+            let default_target = RemoteRefname::new("origin", "master");
+            let git2_repo = case.ctx.git2_repo.get().unwrap();
+            let mut cfg = git2_repo.config().unwrap();
+            cfg.set_str("branch.master.remote", default_target.remote())
+                .unwrap();
+            cfg.set_str(
+                "branch.master.merge",
+                &format!("refs/heads/{}", default_target.branch()),
+            )
+            .unwrap();
+
+            case.ctx.repo.get_mut().unwrap().reload().unwrap();
+
+            create_and_checkout_branch(&case.ctx, "master");
+
+            let guard = case.ctx.shared_worktree_access();
+            assert!(in_open_workspace_mode(&case.ctx, guard.read_permission()).unwrap());
+        }
+
+        #[test]
         fn assure_open_workspace_mode_ok_when_on_gitbutler_workspace() {
             let suite = Suite::default();
             let Case { ctx, .. } = &suite.new_case();
