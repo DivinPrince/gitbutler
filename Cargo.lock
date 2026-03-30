@@ -4106,6 +4106,8 @@ dependencies = [
  "but-serde",
  "but-testsupport",
  "but-workspace",
+ "gitbutler-reference",
+ "gitbutler-stack",
  "gix",
  "schemars 1.2.1",
  "serde",
